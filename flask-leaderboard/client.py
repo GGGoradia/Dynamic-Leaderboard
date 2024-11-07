@@ -1,32 +1,37 @@
-import asyncio
-import websockets
+import websocket
 import json
-import sys
+import time
 
-# Set a compatible event loop policy for Windows
-if sys.platform == 'win32':
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+def on_message(ws, message):
+    print("Received update from server:")
+    leaderboard = json.loads(message)
+    for player in leaderboard:
+        print(f"{player['name']}: {player['score']}")
 
-async def listen():
-    url = "ws://127.0.0.1:5000/ws/leaderboard"
+def on_error(ws, error):
+    print("WebSocket Error:", error)
+
+def on_close(ws, close_status_code, close_msg):
+    print("WebSocket connection closed")
+
+def on_open(ws):
+    print("Connected to the WebSocket server")
+
+if __name__ == "__main__":
+    # WebSocket server URL
+    ws_url = "ws://127.0.0.1:5000/ws/leaderboard"
+
+    # Create WebSocket app
+    ws = websocket.WebSocketApp(
+        ws_url,
+        on_open=on_open,
+        on_message=on_message,
+        on_error=on_error,
+        on_close=on_close
+    )
+
+    # Run WebSocket app with reconnection logic
     while True:
-        try:
-            async with websockets.connect(url) as websocket:
-                print("Connected to the WebSocket server")
-
-                while True:
-                    message = await websocket.recv()
-                    print("Received update from server:")
-                    leaderboard = json.loads(message)
-                    for player in leaderboard:
-                        print(f"{player['name']}: {player['score']}")
-        
-        except websockets.exceptions.ConnectionClosed:
-            print("WebSocket connection closed. Reconnecting...")
-            await asyncio.sleep(2)  # Wait before reconnecting
-        except Exception as e:
-            print(f"An error occurred: {e}")
-            await asyncio.sleep(2)  # Wait before retrying
-
-# Run the WebSocket client
-asyncio.run(listen())
+        ws.run_forever()
+        print("Reconnecting in 2 seconds...")
+        time.sleep(2)  # Wait before reconnecting
