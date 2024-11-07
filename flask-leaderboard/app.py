@@ -1,9 +1,26 @@
 from flask import Flask, render_template, request, jsonify
-from leaderboard import Leaderboard
 
 app = Flask(__name__)
 
-# Initialize the leaderboard with a binary tree structure
+class Leaderboard:
+    def __init__(self):
+        self.players = {}  # Dictionary to store player names and scores
+
+    def add_player(self, name, score):
+        # Convert score to an integer to avoid concatenation
+        score = int(score)
+        # Add to existing score if player exists; otherwise, add new player
+        if name in self.players:
+            self.players[name] += score
+        else:
+            self.players[name] = score
+
+    def get_leaderboard(self):
+        # Sort players by score in descending order and return as a list of dictionaries
+        sorted_leaderboard = sorted(self.players.items(), key=lambda item: item[1], reverse=True)
+        return [{"name": name, "score": score} for name, score in sorted_leaderboard]
+
+# Initialize the leaderboard
 leaderboard = Leaderboard()
 
 # Function to read the Peerfile and create a list of addresses
