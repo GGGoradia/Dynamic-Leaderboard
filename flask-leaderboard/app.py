@@ -1,6 +1,9 @@
 from flask import Flask, render_template, request, jsonify
+from flask_sock import Sock
+import json
 
 app = Flask(__name__)
+sock = Sock(app)
 
 class Leaderboard:
     def __init__(self):
@@ -22,6 +25,9 @@ class Leaderboard:
 
 # Initialize the leaderboard
 leaderboard = Leaderboard()
+
+# Store connected WebSocket clients
+clients = []
 
 # Function to read the Peerfile and create a list of addresses
 def read_peerfile():
@@ -51,7 +57,28 @@ def update_leaderboard():
     # Update leaderboard with new player data
     player_data = request.get_json()
     leaderboard.add_player(player_data['name'], player_data['score'])
+    
+    # Broadcast the updated leaderboard to all WebSocket clients
+    leaderboard_data = json.dumps(leaderboard.get_leaderboard())
+    for ws in clients:
+        ws.send(leaderboard_data)
+    
     return jsonify({'message': 'Leaderboard updated successfully!'})
+
+# WebSocket route for real-time leaderboard updates
+@sock.route('/ws/leaderboard')
+def leaderboard_ws(ws):
+    # Add the new WebSocket connection to the clients list
+    clients.append(ws)
+    
+    # Send the initial leaderboard data on connection
+    ws.send(json.dumps(leaderboard.get_leaderboard()))
+
+    # Listen for client disconnection
+    while True:
+        if ws.closed:
+            clients.remove(ws)
+            break
 
 # Optional: Add an endpoint to retrieve peer addresses if needed
 @app.route('/api/peers', methods=['GET'])
