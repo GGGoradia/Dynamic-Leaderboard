@@ -1,27 +1,37 @@
-from flask import Flask, request, jsonify
+from flask import Flask, render_template, request, jsonify
 from flask_sock import Sock
 import json
+
+from .leaderboard import Leaderboard
+from .topologymgr import BinTreeTopologyManager
+from .notifbus import NotificationBus
+from .messaging import MessagingTask
 
 app = Flask(__name__)
 sock = Sock(app)
 
-class Leaderboard:
-    def __init__(self):
-        self.players = {}
-
-    def add_player(self, name, score):
-        score = int(score)
-        if name in self.players:
-            self.players[name] += score
-        else:
-            self.players[name] = score
-
-    def get_leaderboard(self):
-        sorted_leaderboard = sorted(self.players.items(), key=lambda item: item[1], reverse=True)
-        return [{"name": name, "score": score} for name, score in sorted_leaderboard]
-
 leaderboard = Leaderboard()
 clients = []
+
+def notify_all(data):
+    for ws in clients[:]:
+        try:
+            ws.send(data)
+        except Exception as e:
+            print("Error sending to client:", e, flush=True)
+            clients.remove(ws)  # Remove disconnected clients
+
+notifs = NotificationBus(BinTreeTopologyManager(None), leaderboard, notify_all)
+mt = MessagingTask(notifs)
+
+def notify_all_except(data, conn):
+    for ws in clients[:]:
+        if ws is conn: continue
+        try:
+            ws.send(data)
+        except Exception as e:
+            print("Error sending to client:", e, flush=True)
+            clients.remove(ws)  # Remove disconnected clients
 
 @app.route('/api/leaderboard', methods=['GET'])
 def get_leaderboard():
@@ -31,35 +41,57 @@ def get_leaderboard():
 @app.route('/api/update', methods=['POST'])
 def update_leaderboard():
     player_data = request.get_json()
-    leaderboard.add_player(player_data['name'], player_data['score'])
+    leaderboard.update(player_data['name'], player_data['score'])
 
-    # Broadcast the updated leaderboard to all WebSocket clients
-    leaderboard_data = json.dumps(leaderboard.get_leaderboard())
-    for ws in clients[:]:
-        try:
-            ws.send(leaderboard_data)
-        except Exception as e:
-            print("Error sending to client:", e)
-            clients.remove(ws)  # Remove disconnected clients
+    # Broadcast the update to all WebSocket clients
+    leaderboard_data = json.dumps({"op": "lb_update", "d": player_data})
+    notify_all(leaderboard_data)
+    mt.conn and mt.conn.send(leaderboard_data)
 
     return jsonify({'message': 'Leaderboard updated successfully!'})
 
-@sock.route('/ws/leaderboard')
+@sock.route('/connect')
 def leaderboard_ws(ws):
     # Add the WebSocket connection to the clients list
     clients.append(ws)
     try:
         # Send the current leaderboard data upon connection
-        ws.send(json.dumps(leaderboard.get_leaderboard()))
-        
+        ws.send(json.dumps({"op": "lb_sync", "d": leaderboard.get_leaderboard()}))
+        ws.send(json.dumps({"op": "tm_sync", "d": notifs.tm.serialize()}))
+
         # Keep the connection open to listen for incoming messages or disconnection
         while True:
             message = ws.receive()
             if message is None:
                 break  # Exit if the client disconnects
+            p = json.loads(message)
+            print("received from child", ws, p, flush=True)
+            data = p["d"]
+            op = p["op"]
+
+            if op == "lb_update":
+                notifs.lb.update(data["name"], data["score"])
+            elif op == "tm_update":
+                notifs.tm.update(data)
+            elif op == "tm_sync":
+                notifs.tm.update_with(data)
+            elif op == "lb_sync":
+                notifs.lb.players = {d["name"]: d["score"] for d in data}
+
+            notify_all_except(message, ws)
     finally:
         # Remove the client from the list upon disconnection
         clients.remove(ws)
 
+@app.route('/')
+def index():
+    return render_template('leaderboard.html')
+
+mt.start()
+
+def main():
+    app.run()
+    mt.join()
+
 if __name__ == "__main__":
-    app.run(debug=True)
+    main()

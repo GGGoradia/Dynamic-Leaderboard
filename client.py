@@ -19,7 +19,7 @@ def on_open(ws):
 
 if __name__ == "__main__":
     # WebSocket server URL
-    ws_url = "ws://127.0.0.1:5000/ws/leaderboard"
+    ws_url = "ws://127.0.0.1:5000/connect"
 
     # Create WebSocket app
     ws = websocket.WebSocketApp(
