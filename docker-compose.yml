@@ -2,7 +2,7 @@ services:
   leaderboard:
     build: .
     deploy:
-      replicas: 2
+      replicas: 5
     networks:
       - fognw
 
