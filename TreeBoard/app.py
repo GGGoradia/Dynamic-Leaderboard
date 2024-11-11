@@ -10,6 +10,8 @@ from .messaging import MessagingTask
 app = Flask(__name__)
 sock = Sock(app)
 
+app.config['SOCK_SERVER_OPTIONS'] = {'ping_interval': 20}
+
 leaderboard = Leaderboard()
 clients = []
 
@@ -22,7 +24,7 @@ def notify_all(data):
             clients.remove(ws)  # Remove disconnected clients
 
 notifs = NotificationBus(BinTreeTopologyManager(None), leaderboard, notify_all)
-mt = MessagingTask(notifs)
+mt = MessagingTask(notifs, app)
 
 def notify_all_except(data, conn):
     for ws in clients[:]:
@@ -46,7 +48,7 @@ def update_leaderboard():
     # Broadcast the update to all WebSocket clients
     leaderboard_data = json.dumps({"op": "lb_update", "d": player_data})
     notify_all(leaderboard_data)
-    mt.conn and mt.conn.send(leaderboard_data)
+    mt.conn and mt.send(leaderboard_data)
 
     return jsonify({'message': 'Leaderboard updated successfully!'})
 
@@ -71,12 +73,13 @@ def leaderboard_ws(ws):
 
             if op == "lb_update":
                 notifs.lb.update(data["name"], data["score"])
+                mt.conn and mt.send(message) # forward to parent
             elif op == "tm_update":
                 notifs.tm.update(data)
             elif op == "tm_sync":
                 notifs.tm.update_with(data)
             elif op == "lb_sync":
-                notifs.lb.players = {d["name"]: d["score"] for d in data}
+                notifs.lb.players.update({d["name"]: d["score"] for d in data})
 
             notify_all_except(message, ws)
     finally:

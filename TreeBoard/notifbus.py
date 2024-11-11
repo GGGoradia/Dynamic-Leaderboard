@@ -19,11 +19,11 @@ class NotificationBus:
 
     def tm_sync(self, data):
         self.tm.update_with(data)
-        self.push({"op": "tm_sync", "d": self.tm.serialize()})
+        # self.push({"op": "tm_sync", "d": self.tm.serialize()})
 
     def lb_sync(self, data):
-        self.lb.players = {d["name"]: d["score"] for d in data}
-        self.push({"op": "lb_sync", "d": self.lb.get_leaderboard()})
+        self.lb.players.update({d["name"]: d["score"] for d in data})
+        # self.push({"op": "lb_sync", "d": self.lb.get_leaderboard()})
 
     def handle(self, payload):
         getattr(self, payload["op"])(payload["d"])
